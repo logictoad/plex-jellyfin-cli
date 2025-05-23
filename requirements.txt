@@ -2,4 +2,3 @@ plexapi
 dotenv
 requests
 rapidfuzz
-csv
