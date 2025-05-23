@@ -1,4 +1,4 @@
-# Plex-Jellyfin CLI Sync Tool
+# Plex-Jellyfin CLI Tool
 
 A command-line utility for synchronizing, comparing, and exporting metadata between Plex and Jellyfin media servers.  
 Supports listing, exporting, fuzzy matching, watched status sync, duplicate detection, and more.
