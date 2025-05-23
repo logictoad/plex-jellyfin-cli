@@ -1,0 +1,3 @@
+# any env files conftaining secrets
+.env
+*.csv
