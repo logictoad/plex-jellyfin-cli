@@ -12,12 +12,33 @@ import argparse
 import re
 import csv
 from datetime import datetime as dt, timedelta
-import requests
 from dotenv import load_dotenv
 from rapidfuzz import fuzz
 
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound
+
+from lib.jellyfin_api import (
+    jellyfin_get_user_id,
+    jellyfin_get_movies,
+    jellyfin_get_movie_by_title,
+    jellyfin_get_tvshows,
+    jellyfin_get_tvshow_by_title,
+    jellyfin_get_episodes,
+    jellyfin_mark_movie_played,
+    jellyfin_mark_episode_played,
+)
+from lib.plex_api import (
+    plex_get_server,
+    plex_get_movies,
+    plex_list_all_movies,
+    plex_get_movie,
+    plex_update_movie_addedat,
+    plex_list_all_shows,
+    plex_get_show,
+    plex_mark_movie_played,
+    plex_mark_episode_played,
+)
 
 # Load the .env file
 load_dotenv()
@@ -29,142 +50,17 @@ jellyfin_url = os.getenv("JELLYFIN_URL")
 jellyfin_user = os.getenv("JELLYFIN_USER")
 jellyfin_apikey = os.getenv("JELLYFIN_APIKEY")
 
-plexlocal = PlexServer(plex_url, plex_token)
-plex_lib_movies = plexlocal.library.section("Movies")
-plex_lib_tv = plexlocal.library.section("TV Shows")
+try:
+    plexlocal = plex_get_server(plex_url, plex_token)
+except Exception:
+    print("[FATAL] Plex server connection failed. Exiting.")
+    exit(1)
 
+plex_lib_movies = plex_get_movies(plexlocal)
+plex_lib_tv = plexlocal.library.section("TV Shows")  # Add this if you use TV shows
 
-def jellyfin_headers():
-    """Return headers for Jellyfin API requests."""
-    return {"X-Emby-Token": jellyfin_apikey, "Content-Type": "application/json"}
-
-
-def jellyfin_get_user_id(jellyfin_username):
-    """Look up the Jellyfin user ID (GUID) for the given username."""
-    url = f"{jellyfin_url}/Users"
-    resp = requests.get(url, headers=jellyfin_headers(), timeout=10)
-    resp.raise_for_status()
-    users = resp.json()
-    for user in users:
-        if user.get("Name", "").lower() == jellyfin_username.lower():
-            return user["Id"]
-    raise ValueError(f"User '{jellyfin_username}' not found in Jellyfin users list.")
-
-
-def jellyfin_get_movies(jellyfin_user_id, with_path=False):
-    """Get all movies for a Jellyfin user. Optionally include file paths."""
-    url = f"{jellyfin_url}/Users/{jellyfin_user_id}/Items"
-    params = {"IncludeItemTypes": "Movie", "Recursive": "true"}
-    if with_path:
-        params["fields"] = "Path"
-    resp = requests.get(url, headers=jellyfin_headers(), params=params, timeout=10)
-    resp.raise_for_status()
-    return resp.json().get("Items", [])
-
-
-def jellyfin_get_movie_by_title(title, jellyfin_user_id):
-    """Get a Jellyfin movie by title for a given user."""
-    movies = jellyfin_get_movies(jellyfin_user_id)
-    for movie in movies:
-        if movie["Name"].lower() == title.lower():
-            return movie
-    return None
-
-
-def jellyfin_mark_movie_played(movie_id, jellyfin_user_id, dryrun=False):
-    """Mark a Jellyfin movie as played for a user. Supports dry run."""
-    url = f"{jellyfin_url}/Users/{jellyfin_user_id}/PlayedItems/{movie_id}"
-    if dryrun:
-        print(f"[DRYRUN] Would mark movie {movie_id} as played in Jellyfin.")
-        return
-    resp = requests.post(url, headers=jellyfin_headers(), timeout=10)
-    if resp.status_code == 204:
-        print(f"Marked movie {movie_id} as played in Jellyfin.")
-    else:
-        print(f"Failed to mark movie {movie_id} as played in Jellyfin.")
-
-
-def jellyfin_get_tvshows(jellyfin_user_id, with_path=False):
-    """Get all TV shows for a Jellyfin user. Optionally include file paths."""
-    url = f"{jellyfin_url}/Users/{jellyfin_user_id}/Items"
-    params = {"IncludeItemTypes": "Series", "Recursive": "true"}
-    if with_path:
-        params["fields"] = "Path"
-    resp = requests.get(url, headers=jellyfin_headers(), params=params, timeout=10)
-    resp.raise_for_status()
-    return resp.json().get("Items", [])
-
-
-def jellyfin_get_tvshow_by_title(title, jellyfin_user_id):
-    """Get a Jellyfin TV show by title for a given user."""
-    shows = jellyfin_get_tvshows(jellyfin_user_id)
-    for show in shows:
-        if show["Name"].lower() == title.lower():
-            return show
-    return None
-
-
-def jellyfin_get_episodes(show_id, jellyfin_user_id, with_path=False):
-    """Get all episodes for a Jellyfin show and user. Optionally include file paths."""
-    url = f"{jellyfin_url}/Users/{jellyfin_user_id}/Items"
-    params = {"ParentId": show_id, "IncludeItemTypes": "Episode", "Recursive": "true"}
-    if with_path:
-        params["fields"] = "Path"
-    resp = requests.get(url, headers=jellyfin_headers(), params=params, timeout=10)
-    resp.raise_for_status()
-    return resp.json().get("Items", [])
-
-
-def jellyfin_mark_episode_played(episode_id, jellyfin_user_id, dryrun=False):
-    """Mark a Jellyfin episode as played for a user. Supports dry run."""
-    url = f"{jellyfin_url}/Users/{jellyfin_user_id}/PlayedItems/{episode_id}"
-    if dryrun:
-        print(f"[DRYRUN] Would mark episode {episode_id} as played in Jellyfin.")
-        return
-    resp = requests.post(url, headers=jellyfin_headers(), timeout=10)
-    if resp.status_code == 204:
-        print(f"Marked episode {episode_id} as played in Jellyfin.")
-    else:
-        print(f"Failed to mark episode {episode_id} as played in Jellyfin.")
-
-
-def plex_list_all_movies(lib_movies):
-    """Return all movie objects from the given Plex library section."""
-    return lib_movies.search()
-
-
-def plex_get_movie(lib_movies, movietitle):
-    """Get a Plex movie by title from the given library section."""
-    return lib_movies.get(title=movietitle)
-
-
-def plex_update_movie_addedat(lib_movies, movietitle, addedat_date, dryrun=False):
-    """Update the 'addedAt' date for a Plex movie. Supports dry run."""
-    videoentry = lib_movies.get(title=movietitle)
-    dateobj = dt.strftime(videoentry.addedAt, "%Y-%m-%d %H:%M")
-    dtdateobj = dt.strptime(dateobj, "%Y-%m-%d %H:%M")
-    compareaddedat_date = dt.strftime(addedat_date, "%Y-%m-%d %H:%M")
-    dtcompareaddedat_date = dt.strptime(compareaddedat_date, "%Y-%m-%d %H:%M")
-    startdate = dtdateobj - timedelta(hours=12)
-    enddate = dtdateobj + timedelta(hours=12)
-    if dtcompareaddedat_date < startdate or dtcompareaddedat_date > enddate:
-        print(
-            f"{'[DRYRUN] ' if dryrun else ''}Updating Movie: {videoentry}, Current Date: {videoentry.addedAt}"
-        )
-        if not dryrun:
-            updates = {"addedAt.value": addedat_date}
-            videoentry.edit(**updates)
-
-
-def plex_list_all_shows(lib_tv):
-    """Return all TV show objects from the given Plex library section."""
-    return lib_tv.search()
-
-
-def plex_get_show(lib_tv, tvtitle):
-    """Get a Plex TV show by title from the given library section."""
-    return lib_tv.get(title=tvtitle)
-
+user_id = jellyfin_get_user_id(jellyfin_url, jellyfin_apikey, jellyfin_user)
+movies = jellyfin_get_movies(jellyfin_url, jellyfin_apikey, user_id)
 
 def normalize_title(title):
     """Remove year in parentheses, e.g., "Title (2020)" -> "Title" and normalize."""
@@ -220,7 +116,7 @@ def compare_titles(
         else:
             source_titles = []
             source_years = []
-            for movie in jellyfin_get_movies(jellyfin_user_id):
+            for movie in jellyfin_get_movies(jellyfin_url, jellyfin_apikey, jellyfin_user_id):
                 source_titles.append(movie["Name"])
                 source_years.append(movie.get("ProductionYear"))
         if target == "plex":
@@ -232,7 +128,7 @@ def compare_titles(
         else:
             target_titles = []
             target_years = []
-            for movie in jellyfin_get_movies(jellyfin_user_id):
+            for movie in jellyfin_get_movies(jellyfin_url, jellyfin_apikey, jellyfin_user_id):
                 target_titles.append(movie["Name"])
                 target_years.append(movie.get("ProductionYear"))
     elif library == "tv":
@@ -245,7 +141,7 @@ def compare_titles(
         else:
             source_titles = []
             source_years = []
-            for show in jellyfin_get_tvshows(jellyfin_user_id):
+            for show in jellyfin_get_tvshows(jellyfin_url, jellyfin_apikey, jellyfin_user_id):
                 source_titles.append(show["Name"])
                 source_years.append(show.get("ProductionYear"))
         if target == "plex":
@@ -257,7 +153,7 @@ def compare_titles(
         else:
             target_titles = []
             target_years = []
-            for show in jellyfin_get_tvshows(jellyfin_user_id):
+            for show in jellyfin_get_tvshows(jellyfin_url, jellyfin_apikey, jellyfin_user_id):
                 target_titles.append(show["Name"])
                 target_years.append(show.get("ProductionYear"))
     else:
@@ -357,7 +253,7 @@ def print_with_path(
                     show_id = item.get("Id")
                     if show_id and jellyfin_user_id:
                         episodes = jellyfin_get_episodes(
-                            show_id, jellyfin_user_id, with_path=True
+                            show_id, jellyfin_url, jellyfin_apikey, jellyfin_user_id, with_path=True
                         )
                         ep_path = None
                         for ep in episodes:
@@ -405,15 +301,15 @@ def list_duplicates(library, server, jellyfin_user_id=None):
                         f"[Plex] Show: {show.title} | Episode: {episode.title} (Season {episode.seasonNumber}, Ep {episode.index}) has combined versions"
                     )
     elif library == "movies" and server == "jellyfin":
-        movies = jellyfin_get_movies(jellyfin_user_id)
+        movies = jellyfin_get_movies(jellyfin_url, jellyfin_apikey, jellyfin_user_id)
         for movie in sorted(movies, key=lambda x: x.get("Name", "").lower()):
             # MediaSources is a list of versions/files for the movie
             if movie.get("MediaSources") and len(movie["MediaSources"]) > 1:
                 print(f"[Jellyfin] Movie with combined versions: {movie['Name']}")
     elif library == "tv" and server == "jellyfin":
-        shows = jellyfin_get_tvshows(jellyfin_user_id)
+        shows = jellyfin_get_tvshows(jellyfin_url, jellyfin_apikey, jellyfin_user_id)
         for show in sorted(shows, key=lambda x: x.get("Name", "").lower()):
-            episodes = jellyfin_get_episodes(show["Id"], jellyfin_user_id)
+            episodes = jellyfin_get_episodes(show["Id"], jellyfin_url, jellyfin_apikey, jellyfin_user_id)
             for ep in episodes:
                 if ep.get("MediaSources") and len(ep["MediaSources"]) > 1:
                     print(
@@ -528,7 +424,7 @@ Examples:
     ):
         needs_jellyfin = True
     if needs_jellyfin:
-        jellyfin_user_id = jellyfin_get_user_id(jellyfin_user)
+        jellyfin_user_id = jellyfin_get_user_id(jellyfin_url, jellyfin_apikey, jellyfin_user)
 
     # List items
     if args.list:
@@ -548,7 +444,7 @@ Examples:
                 print(f"Total: {len(sorted_movies)}")
             return
         if library == "movies" and server == "jellyfin":
-            movies = jellyfin_get_movies(jellyfin_user_id, with_path=with_path)
+            movies = jellyfin_get_movies(jellyfin_url, jellyfin_apikey, jellyfin_user_id, with_path=with_path)
             if with_path:
                 print_with_path(movies, "jellyfin", "movies", export_csv=export_csv)
             else:
@@ -570,7 +466,7 @@ Examples:
                 print(f"Total: {len(sorted_shows)}")
             return
         if library == "tv" and server == "jellyfin":
-            shows = jellyfin_get_tvshows(jellyfin_user_id, with_path=with_path)
+            shows = jellyfin_get_tvshows(jellyfin_url, jellyfin_apikey, jellyfin_user_id, with_path=with_path)
             if with_path:
                 print_with_path(
                     shows,
@@ -606,7 +502,7 @@ Examples:
                 print("Error accessing movie details in Plex:", title)
             return
         if library == "movies" and server == "jellyfin":
-            movie = jellyfin_get_movie_by_title(title, jellyfin_user_id)
+            movie = jellyfin_get_movie_by_title(title, jellyfin_url, jellyfin_apikey, jellyfin_user_id)
             if movie:
                 print(title, movie)
             else:
@@ -622,7 +518,7 @@ Examples:
                 print("Error accessing TV show details in Plex:", title)
             return
         if library == "tv" and server == "jellyfin":
-            show = jellyfin_get_tvshow_by_title(title, jellyfin_user_id)
+            show = jellyfin_get_tvshow_by_title(title, jellyfin_url, jellyfin_apikey, jellyfin_user_id)
             if show:
                 print(title, show)
             else:
@@ -642,7 +538,7 @@ Examples:
             if direction == "jellyfin,plex":
                 local_list = plex_list_all_movies(plex_lib_movies)
                 for lmovie in local_list:
-                    rmovie = jellyfin_get_movie_by_title(lmovie.title, jellyfin_user_id)
+                    rmovie = jellyfin_get_movie_by_title(lmovie.title, jellyfin_url, jellyfin_apikey, jellyfin_user_id)
                     if not rmovie:
                         print("Unable to find movie in Jellyfin:", lmovie.title)
                         continue
@@ -658,12 +554,11 @@ Examples:
                             print(
                                 f"{'[DRYRUN] ' if dryrun else ''}Remote watched and local unwatched. Changing:"
                             )
-                            if not dryrun:
-                                lmovie.markPlayed()
+                            plex_mark_movie_played(lmovie, dryrun=dryrun)
             if direction == "plex,jellyfin":
                 movies = plex_list_all_movies(plex_lib_movies)
                 for lmovie in movies:
-                    rmovie = jellyfin_get_movie_by_title(lmovie.title, jellyfin_user_id)
+                    rmovie = jellyfin_get_movie_by_title(lmovie.title, jellyfin_url, jellyfin_apikey, jellyfin_user_id)
                     if not rmovie:
                         print("Unable to find movie in Jellyfin:", lmovie.title)
                         continue
@@ -675,7 +570,7 @@ Examples:
                             f"{'[DRYRUN] ' if dryrun else ''}Local watched and remote unwatched. Marking remote as played."
                         )
                         jellyfin_mark_movie_played(
-                            rmovie["Id"], jellyfin_user_id, dryrun=dryrun
+                            rmovie["Id"], jellyfin_url, jellyfin_apikey, jellyfin_user_id, dryrun=dryrun
                         )
             print("Unknown sync direction. Use 'plex,jellyfin' or 'jellyfin,plex'.")
             return
@@ -683,14 +578,14 @@ Examples:
             if direction == "jellyfin,plex":
                 local_shows = plex_list_all_shows(plex_lib_tv)
                 for lshow in local_shows:
-                    rshow = jellyfin_get_tvshow_by_title(lshow.title, jellyfin_user_id)
+                    rshow = jellyfin_get_tvshow_by_title(lshow.title, jellyfin_url, jellyfin_apikey, jellyfin_user_id)
                     if not rshow:
                         print("Unable to find show in Jellyfin:", lshow.title)
                         continue
                     print("Checking show:", lshow.title)
                     local_episodes = lshow.episodes()
                     remote_episodes = jellyfin_get_episodes(
-                        rshow["Id"], jellyfin_user_id
+                        rshow["Id"], jellyfin_url, jellyfin_apikey, jellyfin_user_id
                     )
                     for lepisode in local_episodes:
                         match = next(
@@ -707,19 +602,18 @@ Examples:
                                 print(
                                     f"{'[DRYRUN] ' if dryrun else ''}Remote watched and local unwatched for {lepisode.title}. Marking local as played."
                                 )
-                                if not dryrun:
-                                    lepisode.markPlayed()
+                                plex_mark_episode_played(lepisode, dryrun=dryrun)
             if direction == "plex,jellyfin":
                 local_shows = plex_list_all_shows(plex_lib_tv)
                 for lshow in local_shows:
-                    rshow = jellyfin_get_tvshow_by_title(lshow.title, jellyfin_user_id)
+                    rshow = jellyfin_get_tvshow_by_title(lshow.title, jellyfin_url, jellyfin_apikey, jellyfin_user_id)
                     if not rshow:
                         print("Unable to find show in Jellyfin:", lshow.title)
                         continue
                     print("Checking show:", lshow.title)
                     local_episodes = lshow.episodes()
                     remote_episodes = jellyfin_get_episodes(
-                        rshow["Id"], jellyfin_user_id
+                        rshow["Id"], jellyfin_url, jellyfin_apikey, jellyfin_user_id
                     )
                     for lepisode in local_episodes:
                         match = next(
@@ -740,7 +634,7 @@ Examples:
                                 f"{'[DRYRUN] ' if dryrun else ''}Local watched and remote unwatched for {lepisode.title}. Marking remote as played."
                             )
                             jellyfin_mark_episode_played(
-                                match["Id"], jellyfin_user_id, dryrun=dryrun
+                                match["Id"], jellyfin_url, jellyfin_apikey, jellyfin_user_id, dryrun=dryrun
                             )
             print("Unknown sync direction. Use 'plex,jellyfin' or 'jellyfin,plex'.")
             return

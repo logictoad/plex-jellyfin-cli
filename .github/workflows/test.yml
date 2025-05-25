@@ -1,4 +1,4 @@
-name: Pylint
+name: test script
 
 on: [push]
 
@@ -22,3 +22,7 @@ jobs:
     - name: Analysing the code with pylint
       run: |
         pylint $(git ls-files '*.py') --disable=C0301 --fail-under 9
+
+    - name: Run tests
+      run: |
+        python -m unittest test_cli_unit.py

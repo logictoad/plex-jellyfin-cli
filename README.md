@@ -19,7 +19,7 @@ Supports listing, exporting, fuzzy matching, watched status sync, duplicate dete
 
 ## Requirements
 
-- Python 3.7+
+- Python 3.8+
 - [plexapi](https://github.com/pkkid/python-plexapi)
 - [requests](https://pypi.org/project/requests/)
 - [python-dotenv](https://pypi.org/project/python-dotenv/)

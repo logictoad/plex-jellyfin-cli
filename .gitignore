@@ -1,3 +1,7 @@
 # any env files conftaining secrets
 .env
+# Ignore environment files
 *.csv
+# Ignore CSV files
+__pycache__/
+# Python cache files    
