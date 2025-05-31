@@ -70,18 +70,24 @@ def find_best_match(title, candidates, threshold=85, year=None, candidate_years=
         # If titles match after normalization
         if norm_title == norm_candidate:
             # If a year is provided, check candidate year if available
-            if year and candidate_years:
+            if year is not None and candidate_years is not None:
                 candidate_year = candidate_years[idx]
-                if candidate_year and str(candidate_year) == str(year):
+                if candidate_year is not None and str(candidate_year) == str(year):
                     return candidate
-                # If no year in candidate, still allow match
-                if not candidate_year:
-                    return candidate
+                # If year is provided but does not match, skip this candidate
+                continue
             else:
                 return candidate
         # Fallback to fuzzy match
         if fuzz.token_sort_ratio(norm_title, norm_candidate) >= threshold:
-            return candidate
+            # If a year is provided, check candidate year if available
+            if year is not None and candidate_years is not None:
+                candidate_year = candidate_years[idx]
+                if candidate_year is not None and str(candidate_year) == str(year):
+                    return candidate
+                continue
+            else:
+                return candidate
     return None
 
 

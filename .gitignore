@@ -4,4 +4,8 @@
 *.csv
 # Ignore CSV files
 __pycache__/
-# Python cache files    
+# Python cache files
+.coverage
+# Coverage reports
+*.pyc
+# Compiled Python files
