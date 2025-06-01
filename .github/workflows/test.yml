@@ -30,7 +30,7 @@ jobs:
     - name: Show coverage report
       run: |
         echo '### Coverage Report (Python ${{ matrix.python-version }})' >> $GITHUB_STEP_SUMMARY
-      coverage report -m >> coverage.txt
-        echo '```' >> coverage.txt
+        coverage report -m >> coverage.txt
+        echo '```' >> $GITHUB_STEP_SUMMARY
         cat coverage.txt >> $GITHUB_STEP_SUMMARY
         echo '```' >> $GITHUB_STEP_SUMMARY
