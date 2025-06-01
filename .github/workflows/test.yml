@@ -28,10 +28,9 @@ jobs:
         coverage run --source=cli,lib -m unittest test_cli_unit.py
 
     - name: Show coverage report
-      run: coverage report -m > coverage.txt
-
-    - name: Add coverage report to GitHub summary
       run: |
         echo '### Coverage Report (Python ${{ matrix.python-version }})' >> $GITHUB_STEP_SUMMARY
+      coverage report -m >> coverage.txt
+        echo '```' >> coverage.txt
         cat coverage.txt >> $GITHUB_STEP_SUMMARY
-
+        echo '```' >> $GITHUB_STEP_SUMMARY
