@@ -28,14 +28,10 @@ jobs:
         coverage run --source=cli,lib -m unittest test_cli_unit.py
 
     - name: Show coverage report
-      run: coverage report -m
+      run: coverage report -m > coverage.txt
 
-    - name: Generate HTML coverage report
-      run: coverage html
+    - name: Add coverage report to GitHub summary
+      run: |
+        echo '### Coverage Report (Python ${{ matrix.python-version }})' >> $GITHUB_STEP_SUMMARY
+        cat coverage.txt >> $GITHUB_STEP_SUMMARY
 
-    - name: Upload coverage report as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-report
-        path: htmlcov/
-      if: always()
